@@ -1,61 +1,86 @@
 const TelegramApi = require('node-telegram-bot-api')
-const {gameOptions, againOptions} = require('./options')
-const token = '5661922741:AAHkyE22j9xcdchqDUmqK7_iOi9FBa7G3oU'
+const axios = require('axios');
+const token = '5661922741:AAHkyE22j9xcdchqDUmqK7_iOi9FBa7G3oU';
+const api = '960047d09aee18009b5b51f962292d8f';
 
-const bot = new TelegramApi(token, {polling: true})
+const weatherEndpoint = (city) => (
+    `http://api.openweathermap.org/data/2.5/weather?q=${city}&units=metric&&appid=${api}`
+);
 
-const chats = {}
+const weatherIcon = (icon) => `http://openweathermap.org/img/w/${icon}.png`;
+
+// Template for weather response
+const weatherHtmlTemplate = (name, main, weather, wind, clouds) => (
+        `Погода в <b>${name}</b>:
+<b>${weather.main}</b> - ${weather.description}
+Температура: <b>${main.temp} °C</b>
+Давление: <b>${main.pressure} hPa</b>
+Влажность: <b>${main.humidity} %</b>
+Ветер: <b>${wind.speed} meter/sec</b>
+Облака: <b>${clouds.all} %</b>
+`
+);
+
+const bot = new TelegramApi(token, {
+    polling: true
+});
 
 
+const getWeather = (chatId, city) => {
+    const endpoint = weatherEndpoint(city);
 
-bot.setMyCommands([
-    {command: '/start', description: 'This is start'},
-    {command: '/info', description: 'THis is Info'},
-    {command: '/game', description: 'THis is Game'},
-])
+    axios.get(endpoint).then((resp) => {
+        const {
+            name,
+            main,
+            weather,
+            wind,
+            clouds
+        } = resp.data;
 
-const startGame = async (chatId) => {
-    await bot.sendMessage(chatId, `choose number`)
-    const randomNumber = Math.floor(Math.random() * 10)
-    chats[chatId] = randomNumber;
-    await bot.sendMessage(chatId, 'otgadivay', gameOptions)
+        bot.sendPhoto(chatId, weatherIcon(weather[0].icon))
+        bot.sendMessage(
+            chatId,
+            weatherHtmlTemplate(name, main, weather[0], wind, clouds), {
+                parse_mode: "HTML"
+            }
+        );
+    }, error => {
+        console.log("error", error);
+        bot.sendMessage(
+            chatId,
+            `Ooops...I couldn't be able to get weather for <b>${city}</b>`, {
+                parse_mode: "HTML"
+            }
+        );
+    });
 }
 
-const start = () => {
-    bot.on('message', async msg => {
+bot.onText(/\/weather/, (msg, match) => {
+    const chatId = msg.chat.id;
+    const city = match.input.split(' ')[1];
 
+    if (city === undefined) {
+        bot.sendMessage(
+            chatId,
+            `Please provide city name`
+        );
+        return;
+    }
+    getWeather(chatId, city);
+});
 
-        const text = msg.text;
-        const chatId = msg.chat.id;
+bot.onText(/\/start/, (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(
+        chatId,
+        `Welcome at <b>MyTestWeatherInfoBot</b>
+    
+Available commands:
 
-        if (text === '/start') {
-            return bot.sendMessage(chatId, 'Hello mother fucker')
+/weather <b>city</b> - shows weather for selected <b>city</b>
+  `, {
+            parse_mode: "HTML"
         }
-        if (text === '/info') {
-            return bot.sendMessage(chatId, `Hello ${msg.from.first_name}`)
-        }
-        if (text === '/game') {
-            return startGame(chatId)
-        }
-        return bot.sendMessage(chatId, 'ya ne ponimay tebya')
-        console.log(msg)
-    })
-    bot.on('callback_query', async msg => {
-        const data = msg.data;
-        const chatId = msg.message.chat.id;
-        if (data === '/again') {
-            return startGame(chatId)
-
-        }
-        if (data === chats[chatId]) {
-            return bot.sendMessage(chatId, `congratulations ${chats[chatId]}`, againOptions)
-        } else {
-            return bot.sendMessage(chatId, `plak plak ${chats[chatId]}`, againOptions)
-
-        }
-        // bot.sendMessage(chatId, `your choose ${data}`)
-        console.log(msg)
-    })
-}
-
-start()
+    );
+});
